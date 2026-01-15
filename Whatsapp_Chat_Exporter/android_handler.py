@@ -15,6 +15,7 @@ from Whatsapp_Chat_Exporter.utility import MAX_SIZE, ROW_SIZE, JidType, Device, 
 from Whatsapp_Chat_Exporter.utility import rendering, get_file_name, setup_template, get_cond_for_empty
 from Whatsapp_Chat_Exporter.utility import get_status_location, convert_time_unit, get_jid_map_selection
 from Whatsapp_Chat_Exporter.utility import get_chat_condition, safe_name, bytes_to_readable, determine_metadata
+from Whatsapp_Chat_Exporter.media_timestamp import process_media_with_timestamp
 
 
 
@@ -578,7 +579,8 @@ def _get_reactions(db, data):
     logging.info(f"Processed {total_row_number} reactions in {convert_time_unit(total_time)}")
 
 
-def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separate_media=True, fix_dot_files=False):
+def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separate_media=True, fix_dot_files=False
+          embed_exif=False, rename_media=False, timezone_offset=0):
     """
     Process WhatsApp media files from the database.
 
@@ -590,6 +592,9 @@ def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separa
         filter_chat: Chat filter conditions
         filter_empty: Filter for empty chats
         separate_media: Whether to separate media files by chat
+        embed_exif: Whether to embed EXIF timestamp in media files
+        rename_media: Whether to rename media files with timestamp prefix
+        timezone_offset: Hours offset from UTC for timestamp formatting
     """
     c = db.cursor()
     total_row_number = _get_media_count(c, filter_empty, filter_date, filter_chat)
@@ -607,10 +612,12 @@ def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separa
 
     with tqdm(total=total_row_number, desc="Processing media", unit="media", leave=False) as pbar:
         while (content := _fetch_row_safely(content_cursor)) is not None:
-            _process_single_media(data, content, media_folder, mime, separate_media, fix_dot_files)
+            _process_single_media(data, content, media_folder, mime, separate_media, fix_dot_files
+                              embed_exif, rename_media, timezone_offset)
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']
     logging.info(f"Processed {total_row_number} media in {convert_time_unit(total_time)}")
+
 
 # Helper functions for media processing
 
@@ -755,7 +762,8 @@ def _get_media_cursor_new(cursor, filter_empty, filter_date, filter_chat):
     return cursor
 
 
-def _process_single_media(data, content, media_folder, mime, separate_media, fix_dot_files=False):
+def _process_single_media(data, content, media_folder, mime, separate_media, fix_dot_files=False, 
+                          embed_exif=False, rename_media=False, timezone_offset=0):
     """Process a single media file."""
     file_path = f"{media_folder}/{content['file_path']}"
     current_chat = data.get_chat(content["key_remote_jid"])
@@ -791,8 +799,24 @@ def _process_single_media(data, content, media_folder, mime, separate_media, fix
             new_folder = os.path.join(media_folder, "separated", chat_display_name)
             Path(new_folder).mkdir(parents=True, exist_ok=True)
             new_path = os.path.join(new_folder, current_filename)
-            shutil.copy2(file_path, new_path)
-            message.data = new_path
+            # Use timestamp processing if enabled
+            if embed_exif or rename_media:
+                final_path = process_media_with_timestamp(
+                    file_path, new_path, message.timestamp,
+                    timezone_offset, embed_exif, rename_media
+                )
+                message.data = final_path
+            else:
+                shutil.copy2(file_path, new_path)
+                message.data = new_path
+        elif embed_exif or rename_media:
+            # Handle in-place processing when not separating
+            # Create a copy with timestamp processing in the same folder
+            final_path = process_media_with_timestamp(
+                file_path, file_path, message.timestamp,
+                timezone_offset, embed_exif, rename_media
+            )
+            message.data = final_path
         else:
             message.data = file_path
     else:
