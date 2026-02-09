@@ -381,7 +381,26 @@
                                 </a>
                                 {% endif %}
                                 <p class="text-[#111b21] text-sm message-text">
-                                    {% if msg.meta == true or msg.media == false and msg.data is none %}     
+                                    {% if msg.poll %}
+                                        <div class="mb-1">
+                                            <p class="font-semibold text-sm mb-2">📊 {{ msg.poll.question }}</p>
+                                            {% for option in msg.poll.options %}
+                                            <div class="mb-1.5">
+                                                <div class="flex justify-between text-xs mb-0.5">
+                                                    <span>{{ option.text }}</span>
+                                                    <span class="text-[#667781] ml-2">{{ option.vote_count }}</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-1.5">
+                                                    <div class="bg-whatsapp rounded-full h-1.5" style="width: {{ option.vote_pct }}%"></div>
+                                                </div>
+                                                {% if option.voters %}
+                                                <p class="text-[10px] text-[#667781] mt-0.5">{{ option.voters | join(', ') }}</p>
+                                                {% endif %}
+                                            </div>
+                                            {% endfor %}
+                                            <p class="text-[10px] text-[#667781] mt-1 border-t border-gray-200 pt-1">{{ msg.poll.total_voters }} vote{{ 's' if msg.poll.total_voters != 1 else '' }}</p>
+                                        </div>
+                                    {% elif msg.meta == true or msg.media == false and msg.data is none %}     
                                         <div class="flex justify-center mb-2">
                                             <div class="bg-[#FFF3C5] rounded-lg px-3 py-2 text-sm text-[#856404] flex items-center">
                                                 {% if msg.safe %}
@@ -487,7 +506,26 @@
                                 </a>
                                 {% endif %}
                                 <p class="text-[#111b21] text-sm">
-                                    {% if msg.meta == true or msg.media == false and msg.data is none %}
+                                    {% if msg.poll %}
+                                        <div class="mb-1">
+                                            <p class="font-semibold text-sm mb-2">📊 {{ msg.poll.question }}</p>
+                                            {% for option in msg.poll.options %}
+                                            <div class="mb-1.5">
+                                                <div class="flex justify-between text-xs mb-0.5">
+                                                    <span>{{ option.text }}</span>
+                                                    <span class="text-[#667781] ml-2">{{ option.vote_count }}</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-1.5">
+                                                    <div class="bg-whatsapp rounded-full h-1.5" style="width: {{ option.vote_pct }}%"></div>
+                                                </div>
+                                                {% if option.voters %}
+                                                <p class="text-[10px] text-[#667781] mt-0.5">{{ option.voters | join(', ') }}</p>
+                                                {% endif %}
+                                            </div>
+                                            {% endfor %}
+                                            <p class="text-[10px] text-[#667781] mt-1 border-t border-gray-200 pt-1">{{ msg.poll.total_voters }} vote{{ 's' if msg.poll.total_voters != 1 else '' }}</p>
+                                        </div>
+                                    {% elif msg.meta == true or msg.media == false and msg.data is none %}
                                         <div class="flex justify-center mb-2">
                                             <div class="bg-[#FFF3C5] rounded-lg px-3 py-2 text-sm text-[#856404] flex items-center">
                                                 {% if msg.safe %}

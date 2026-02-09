@@ -11,27 +11,43 @@ from markupsafe import escape as htmle
 from Whatsapp_Chat_Exporter.data_model import ChatStore, Message
 from Whatsapp_Chat_Exporter.utility import APPLE_TIME, get_chat_condition, Device
 from Whatsapp_Chat_Exporter.utility import bytes_to_readable, convert_time_unit, safe_name
+from Whatsapp_Chat_Exporter.poll import decode_poll_from_receipt_blob
 
 
 
 
 def contacts(db, data):
-    """Process WhatsApp contacts with status information."""
+    """Process WhatsApp contacts with name and status information."""
     c = db.cursor()
-    c.execute("""SELECT count() FROM ZWAADDRESSBOOKCONTACT WHERE ZABOUTTEXT IS NOT NULL""")
+    c.execute("""SELECT count() FROM ZWAADDRESSBOOKCONTACT""")
     total_row_number = c.fetchone()[0]
     logging.info(f"Pre-processing contacts...({total_row_number})", extra={"clear": True})
 
-    c.execute("""SELECT ZWHATSAPPID, ZABOUTTEXT FROM ZWAADDRESSBOOKCONTACT WHERE ZABOUTTEXT IS NOT NULL""")
+    c.execute("""SELECT ZWHATSAPPID, ZLID, ZFULLNAME, ZABOUTTEXT FROM ZWAADDRESSBOOKCONTACT""")
     with tqdm(total=total_row_number, desc="Processing contacts", unit="contact", leave=False) as pbar:
         while (content := c.fetchone()) is not None:
             zwhatsapp_id = content["ZWHATSAPPID"]
+            if zwhatsapp_id is None:
+                pbar.update(1)
+                continue
             if not zwhatsapp_id.endswith("@s.whatsapp.net"):
                 zwhatsapp_id += "@s.whatsapp.net"
 
             current_chat = ChatStore(Device.IOS)
-            current_chat.status = content["ZABOUTTEXT"]
+            if content["ZFULLNAME"]:
+                current_chat.name = content["ZFULLNAME"]
+            if content["ZABOUTTEXT"]:
+                current_chat.status = content["ZABOUTTEXT"]
             data.add_chat(zwhatsapp_id, current_chat)
+
+            # Also index by LID for group member lookups
+            zlid = content["ZLID"]
+            if zlid and content["ZFULLNAME"]:
+                if zlid not in data:
+                    lid_chat = ChatStore(Device.IOS)
+                    lid_chat.name = content["ZFULLNAME"]
+                    data.add_chat(zlid, lid_chat)
+
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']
     logging.info(f"Pre-processed {total_row_number} contacts in {convert_time_unit(total_time)}")
@@ -124,7 +140,12 @@ def messages(db, data, media_folder, timezone_offset, filter_date, filter_chat, 
                 current_chat = data.add_chat(contact_id, ChatStore(Device.IOS, contact_name, media_folder))
             else:
                 current_chat = data.get_chat(contact_id)
-                current_chat.name = contact_name
+                # Only overwrite name if we have a better one (not a phone number)
+                # or if there's no existing name
+                if current_chat.name is None or contact_name is not None:
+                    is_phone = contact_name.replace("+", "").replace(" ", "").isdigit() if contact_name else True
+                    if not is_phone or current_chat.name is None:
+                        current_chat.name = contact_name
                 current_chat.my_avatar = os.path.join(media_folder, "Media/Profile/Photo.jpg")
 
             # Process avatar images
@@ -132,6 +153,17 @@ def messages(db, data, media_folder, timezone_offset, filter_date, filter_chat, 
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']
     logging.info(f"Processed {total_row_number} contacts in {convert_time_unit(total_time)}")
+
+    # Pre-load push names for JIDs not yet in data (especially @lid group members)
+    c.execute("""SELECT ZJID, ZPUSHNAME FROM ZWAPROFILEPUSHNAME WHERE ZPUSHNAME IS NOT NULL""")
+    while (row := c.fetchone()) is not None:
+        jid = row["ZJID"]
+        if jid not in data:
+            push_chat = ChatStore(Device.IOS)
+            push_chat.name = row["ZPUSHNAME"]
+            data.add_chat(jid, push_chat)
+        elif data.get_chat(jid).name is None:
+            data.get_chat(jid).name = row["ZPUSHNAME"]
 
     # Get message count
     message_count_query = f"""
@@ -255,6 +287,15 @@ def process_message_data(message, content, is_group_message, data, message_map, 
         quoted = content["ZMETADATA"][2:19]
         message.reply = quoted.decode()
         message.quoted_data = message_map.get(message.reply)
+
+    # Skip poll vote update messages (type 66)
+    if content["ZMESSAGETYPE"] == 66:
+        return True  # Invalid, skip
+
+    # Handle poll messages (type 46) - will be enriched by polls() later
+    if content["ZMESSAGETYPE"] == 46:
+        message.data = "\U0001f4ca Poll"
+        return False  # Valid, populated later by polls()
 
     # Handle stickers
     if content["ZMESSAGETYPE"] == 15:
@@ -594,6 +635,187 @@ def process_call_record(content, chat, data, timezone_offset):
 
     # Add call to chat
     chat.add_message(call.key_id, call)
+
+
+def _resolve_voter_name(voter_jid, is_creator, message, data):
+    """Resolve a voter JID to a display name.
+
+    Args:
+        voter_jid (str or None): The voter's JID (often LID format like '123@lid').
+        is_creator (bool): Whether this voter is the poll creator.
+        message (Message): The poll message object.
+        data (ChatCollection): The chat data collection for name lookups.
+
+    Returns:
+        str: The resolved display name.
+    """
+    if voter_jid is None:
+        if is_creator:
+            # Field 6 in the protobuf is always the device owner's vote,
+            # not the poll message sender's vote
+            return "You"
+        return "Unknown"
+
+    # Try direct lookup in data
+    if voter_jid in data:
+        chat = data.get_chat(voter_jid)
+        if chat is not None and chat.name:
+            return chat.name
+
+    # Try with @s.whatsapp.net suffix
+    if "@" not in voter_jid:
+        jid_with_suffix = f"{voter_jid}@s.whatsapp.net"
+        if jid_with_suffix in data:
+            chat = data.get_chat(jid_with_suffix)
+            if chat is not None and chat.name:
+                return chat.name
+
+    # Fallback: strip domain part
+    if "@" in voter_jid:
+        return voter_jid.split("@")[0]
+    return voter_jid
+
+
+def polls(db, data, filter_date, filter_chat, filter_empty):
+    """Process WhatsApp poll messages (type 46) from the database.
+
+    Queries ZWAMESSAGEINFO.ZRECEIPTINFO for poll messages, decodes the
+    protobuf blobs, and enriches the corresponding Message objects with
+    structured poll data.
+
+    Args:
+        db: SQLite database connection.
+        data (ChatCollection): The chat data collection.
+        filter_date: Date filter SQL fragment or None.
+        filter_chat: Tuple of (include_filter, exclude_filter).
+        filter_empty: Whether to filter empty chats.
+    """
+    c = db.cursor()
+
+    # Build filter conditions
+    chat_filter_include = get_chat_condition(
+        filter_chat[0], True, ["ZWACHATSESSION.ZCONTACTJID", "ZMEMBERJID"], "ZGROUPINFO", "ios")
+    chat_filter_exclude = get_chat_condition(
+        filter_chat[1], False, ["ZWACHATSESSION.ZCONTACTJID", "ZMEMBERJID"], "ZGROUPINFO", "ios")
+    date_filter = f'AND ZWAMESSAGE.ZMESSAGEDATE {filter_date}' if filter_date is not None else ''
+
+    # Count poll messages
+    count_query = f"""
+        SELECT count()
+        FROM ZWAMESSAGE
+            JOIN ZWAMESSAGEINFO ON ZWAMESSAGEINFO.ZMESSAGE = ZWAMESSAGE.Z_PK
+            INNER JOIN ZWACHATSESSION
+                ON ZWAMESSAGE.ZCHATSESSION = ZWACHATSESSION.Z_PK
+            LEFT JOIN ZWAGROUPMEMBER
+                ON ZWAMESSAGE.ZGROUPMEMBER = ZWAGROUPMEMBER.Z_PK
+        WHERE ZWAMESSAGE.ZMESSAGETYPE = 46
+            AND ZWAMESSAGEINFO.ZRECEIPTINFO IS NOT NULL
+            {date_filter}
+            {chat_filter_include}
+            {chat_filter_exclude}
+    """
+    c.execute(count_query)
+    total_row_number = c.fetchone()[0]
+
+    if total_row_number == 0:
+        return
+
+    logging.info(f"Processing polls...(0/{total_row_number})", extra={"clear": True})
+
+    # Fetch poll data
+    poll_query = f"""
+        SELECT ZWACHATSESSION.ZCONTACTJID,
+            ZWAMESSAGE.Z_PK AS ZMESSAGE,
+            ZWAMESSAGEINFO.ZRECEIPTINFO
+        FROM ZWAMESSAGE
+            JOIN ZWAMESSAGEINFO ON ZWAMESSAGEINFO.ZMESSAGE = ZWAMESSAGE.Z_PK
+            INNER JOIN ZWACHATSESSION
+                ON ZWAMESSAGE.ZCHATSESSION = ZWACHATSESSION.Z_PK
+            LEFT JOIN ZWAGROUPMEMBER
+                ON ZWAMESSAGE.ZGROUPMEMBER = ZWAGROUPMEMBER.Z_PK
+        WHERE ZWAMESSAGE.ZMESSAGETYPE = 46
+            AND ZWAMESSAGEINFO.ZRECEIPTINFO IS NOT NULL
+            {date_filter}
+            {chat_filter_include}
+            {chat_filter_exclude}
+        ORDER BY ZWAMESSAGE.ZMESSAGEDATE ASC
+    """
+    c.execute(poll_query)
+
+    with tqdm(total=total_row_number, desc="Processing polls", unit="poll", leave=False) as pbar:
+        while (content := c.fetchone()) is not None:
+            contact_id = content["ZCONTACTJID"]
+            message_pk = content["ZMESSAGE"]
+            receipt_blob = content["ZRECEIPTINFO"]
+
+            current_chat = data.get_chat(contact_id)
+            if current_chat is None:
+                pbar.update(1)
+                continue
+
+            message = current_chat.get_message(message_pk)
+            if message is None:
+                pbar.update(1)
+                continue
+
+            try:
+                poll_data = decode_poll_from_receipt_blob(receipt_blob)
+            except Exception as e:
+                logging.warning(f"Failed to decode poll {message_pk}: {e}")
+                pbar.update(1)
+                continue
+
+            if poll_data is None:
+                pbar.update(1)
+                continue
+
+            # Build structured poll result with vote tallies
+            options = poll_data['options']
+            votes = poll_data['votes']
+
+            # Tally votes per option
+            option_votes = {i: [] for i in range(len(options))}
+            seen_voters = set()
+            for vote in votes:
+                voter_name = _resolve_voter_name(
+                    vote.get('voter_jid'), vote.get('is_creator', False), message, data)
+                voter_key = vote.get('voter_jid') or ("__creator__" if vote.get('is_creator') else "__unknown__")
+                if voter_key not in seen_voters:
+                    seen_voters.add(voter_key)
+                for idx in vote.get('selected_indices', []):
+                    if 0 <= idx < len(options):
+                        option_votes[idx].append(voter_name)
+
+            # Find max vote count for percentage calculation
+            max_votes = max((len(v) for v in option_votes.values()), default=0)
+
+            # Build option list with tallies
+            option_list = []
+            for i, opt_text in enumerate(options):
+                voters = option_votes.get(i, [])
+                vote_count = len(voters)
+                vote_pct = (vote_count / max_votes * 100) if max_votes > 0 else 0
+                option_list.append({
+                    'text': opt_text,
+                    'vote_count': vote_count,
+                    'vote_pct': vote_pct,
+                    'voters': voters,
+                })
+
+            total_voters = len(seen_voters)
+
+            # Set poll data on message
+            message.poll = {
+                'type': 'poll',
+                'question': poll_data['question'],
+                'options': option_list,
+                'total_voters': total_voters,
+            }
+            message.data = f"\U0001f4ca {poll_data['question']}"
+
+            pbar.update(1)
+        total_time = pbar.format_dict['elapsed']
+    logging.info(f"Processed {total_row_number} polls in {convert_time_unit(total_time)}")
 
 
 def format_call_data(call, content):

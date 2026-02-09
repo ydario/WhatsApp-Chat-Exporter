@@ -198,7 +198,7 @@ def _decrypt_crypt14(database: bytes, main_key: bytes, max_worker: int = 10) -> 
                 f"The offsets of your IV and database are {start_iv} and {start_db}, respectively."
             )
             logging.info(
-                f"To include your offsets in the expoter, please report it in the discussion thread on GitHub:"
+                f"To include your offsets in the exporter, please report it in the discussion thread on GitHub:"
             )
             logging.info(f"https://github.com/KnugiHK/Whatsapp-Chat-Exporter/discussions/47")
             return result
