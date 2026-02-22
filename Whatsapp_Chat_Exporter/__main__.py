@@ -578,12 +578,11 @@ def process_messages(args, data: ChatCollection) -> None:
             filter_chat, args.filter_empty
         )
 
-        # Process polls (iOS only)
-        if args.ios:
-            message_handler.polls(
-                db, data, args.filter_date,
-                filter_chat, args.filter_empty
-            )
+        # Process polls
+        message_handler.polls(
+            db, data, args.filter_date,
+            filter_chat, args.filter_empty
+        )
 
         # Process calls
         process_calls(args, db, data, filter_chat, timing)

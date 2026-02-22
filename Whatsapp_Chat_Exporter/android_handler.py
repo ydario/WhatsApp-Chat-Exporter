@@ -1134,6 +1134,10 @@ def _construct_call_description(content, call):
     return description
 
 
+def polls(db, data, date_filter, chat_filter, empty_filter):
+    """Placeholder for future polls processing implementation."""
+    return 
+
 # TODO: Marked for enhancement on multi-threaded processing
 def create_html(
     data,
