@@ -932,14 +932,26 @@ def calls(db, data, timezone_offset, filter_chat):
     c = db.cursor()
 
     # Check if there are any calls that match the filter
-    total_row_number = _get_calls_count(c, filter_chat)
+    # The order matters here, modern query should be attempted first,
+    # if it fails, we can be pretty sure that legacy one will work,
+    # but not the other way around. This is because legacy query is
+    # more simple and less likely to have issues with missing tables/columns.
+    try:
+        total_row_number = _get_calls_count_modern(c, filter_chat)
+    except sqlite3.OperationalError as e:
+        total_row_number = _get_calls_count_legacy(c, filter_chat)
     if total_row_number == 0:
         return
 
     logging.info(f"Processing calls...({total_row_number})", extra={"clear": True})
 
     # Fetch call data
-    calls_data = _fetch_calls_data(c, filter_chat)
+    # Again, we try modern query first and fallback to legacy if it fails,
+    # for the same reasons as above.
+    try:
+        calls_data = _fetch_calls_data_modern(c, filter_chat)
+    except sqlite3.OperationalError as e:
+        calls_data = _fetch_calls_data_legacy(c, filter_chat)
 
     # Create a chat store for all calls
     chat = ChatStore(Device.ANDROID, "WhatsApp Calls")
@@ -955,7 +967,29 @@ def calls(db, data, timezone_offset, filter_chat):
     data.add_chat("000000000000000", chat)
     logging.info(f"Processed {total_row_number} calls in {convert_time_unit(total_time)}")
 
-def _get_calls_count(c, filter_chat):
+
+def _get_calls_count_legacy(c, filter_chat):
+    """Get the count of call records that match the filter."""
+
+    # Build the filter conditions
+    include_filter = get_chat_condition(filter_chat[0], True, ["key_remote_jid"])
+    exclude_filter = get_chat_condition(filter_chat[1], False, ["key_remote_jid"])
+
+    query = f"""SELECT count(),
+                jid.raw_string as key_remote_jid
+            FROM call_log
+                INNER JOIN jid
+                    ON call_log.jid_row_id = jid._id
+                LEFT JOIN chat
+                    ON call_log.jid_row_id = chat.jid_row_id
+            WHERE 1=1
+                {include_filter}
+                {exclude_filter}"""
+    c.execute(query)
+    return c.fetchone()[0]
+
+
+def _get_calls_count_modern(c, filter_chat):
     """Get the count of call records that match the filter."""
 
     # Build the filter conditions
@@ -980,7 +1014,36 @@ def _get_calls_count(c, filter_chat):
     return c.fetchone()[0]
 
 
-def _fetch_calls_data(c, filter_chat):
+def _fetch_calls_data_legacy(c, filter_chat):
+    """Fetch call data from the database."""
+
+    # Build the filter conditions
+    include_filter = get_chat_condition(filter_chat[0], True, ["key_remote_jid"])
+    exclude_filter = get_chat_condition(filter_chat[1], False, ["key_remote_jid"])
+
+    query = f"""SELECT call_log._id,
+                    jid.raw_string as key_remote_jid,
+                    from_me,
+                    call_id,
+                    timestamp,
+                    video_call,
+                    duration,
+                    call_result,
+                    bytes_transferred,
+                    chat.subject as chat_subject
+            FROM call_log
+                INNER JOIN jid
+                    ON call_log.jid_row_id = jid._id
+                LEFT JOIN chat
+                    ON call_log.jid_row_id = chat.jid_row_id
+            WHERE 1=1
+                {include_filter}
+                {exclude_filter}"""
+    c.execute(query)
+    return c
+
+
+def _fetch_calls_data_modern(c, filter_chat):
     """Fetch call data from the database."""
 
     # Build the filter conditions
