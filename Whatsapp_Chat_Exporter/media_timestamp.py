@@ -176,9 +176,10 @@ def process_media_with_timestamp(
     """
     # If no timestamp available, just copy
     if timestamp is None:
-        logger.warning(f"No timestamp available for {source_path}, skipping timestamp operations")
-        shutil.copy2(source_path, dest_path)
-        return dest_path
+        if source_path != dest_path:
+            logger.warning(f"No timestamp available for {source_path}, skipping timestamp operations")
+            shutil.copy2(source_path, dest_path)
+            return dest_path
 
     # Determine final path
     final_path = dest_path
