@@ -13,8 +13,7 @@ from Whatsapp_Chat_Exporter.data_model import ChatStore, Message
 from Whatsapp_Chat_Exporter.utility import APPLE_TIME, get_chat_condition, Device
 from Whatsapp_Chat_Exporter.utility import bytes_to_readable, convert_time_unit, safe_name
 from Whatsapp_Chat_Exporter.poll import decode_poll_from_receipt_blob
-
-
+from Whatsapp_Chat_Exporter.media_timestamp import process_media_with_timestamp
 
 
 def contacts(db, data):
@@ -387,7 +386,8 @@ def process_message_text(message, content):
     message.data = msg
 
 
-def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separate_media=False, fix_dot_files=False):
+def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separate_media=False, fix_dot_files=False,
+          embed_exif=False, rename_media=False, timezone_offset=0):
     """Process media files from WhatsApp messages."""
     c = db.cursor()
 
@@ -445,13 +445,15 @@ def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separa
     mime = MimeTypes()
     with tqdm(total=total_row_number, desc="Processing media", unit="media", leave=False) as pbar:
         while (content := c.fetchone()) is not None:
-            process_media_item(content, data, media_folder, mime, separate_media, fix_dot_files)
+            process_media_item(content, data, media_folder, mime, separate_media, fix_dot_files,
+                               embed_exif, rename_media, timezone_offset)
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']
     logging.info(f"Processed {total_row_number} media in {convert_time_unit(total_time)}")
 
 
-def process_media_item(content, data, media_folder, mime, separate_media, fix_dot_files=False):
+def process_media_item(content, data, media_folder, mime, separate_media, fix_dot_files=False,
+                       embed_exif=False, rename_media=False, timezone_offset=0):
     """Process a single media item."""
     file_path = f"{media_folder}/Message/{content['ZMEDIALOCALPATH']}"
     current_chat = data.get_chat(content["ZCONTACTJID"])
@@ -487,10 +489,24 @@ def process_media_item(content, data, media_folder, mime, separate_media, fix_do
             new_folder = os.path.join(media_folder, "separated", chat_display_name)
             Path(new_folder).mkdir(parents=True, exist_ok=True)
             new_path = os.path.join(new_folder, current_filename)
-            shutil.copy2(file_path, new_path)
-            message.data = '/'.join(new_path.split("/")[1:])
+            # Use timestamp processing if enabled
+            if embed_exif or rename_media:
+                final_path = process_media_with_timestamp(
+                    file_path, new_path, message.timestamp,
+                    timezone_offset, embed_exif, rename_media
+                )
+            else:
+                final_path = new_path
+                shutil.copy2(file_path, final_path)
+        elif embed_exif or rename_media:
+            # Handle in-place processing when not separating
+            final_path = process_media_with_timestamp(
+                file_path, file_path, message.timestamp,
+                timezone_offset, embed_exif, rename_media
+            )
         else:
-            message.data = '/'.join(file_path.split("/")[1:])
+            final_path = file_path
+        message.data = os.path.join(*final_path.split(os.sep)[1:])
     else:
         # Handle missing media
         message.data = "The media is missing"
