@@ -24,7 +24,14 @@ def contacts(db, data):
     total_row_number = c.fetchone()[0]
     logging.info(f"Pre-processing contacts...({total_row_number})", extra={"clear": True})
 
-    c.execute("""SELECT ZWHATSAPPID, ZLID, ZFULLNAME, ZABOUTTEXT FROM ZWAADDRESSBOOKCONTACT""")
+    # Check if expected columns exist before querying,  
+    # to handle different WhatsApp versions (mainly ZLID).
+    c.execute("PRAGMA table_info(ZWAADDRESSBOOKCONTACT)")
+    column_names = [info[1] for info in c.fetchall()] 
+    all_cols = ["ZWHATSAPPID", "ZLID", "ZFULLNAME", "ZABOUTTEXT"]
+    columns = [col for col in all_cols if col in column_names]
+
+    c.execute(f"""SELECT {', '.join(columns)} FROM ZWAADDRESSBOOKCONTACT""")
     with tqdm(total=total_row_number, desc="Processing contacts", unit="contact", leave=False) as pbar:
         while (content := c.fetchone()) is not None:
             zwhatsapp_id = content["ZWHATSAPPID"]
@@ -40,7 +47,11 @@ def contacts(db, data):
             if content["ZABOUTTEXT"]:
                 current_chat.status = content["ZABOUTTEXT"]
             # Index by WhatsApp ID, with LID as alias if available
-            data.add_chat(zwhatsapp_id, current_chat, content["ZLID"] if content["ZLID"] else None)
+            data.add_chat(
+                zwhatsapp_id,
+                current_chat,
+                content["ZLID"] if "ZLID" in columns and content["ZLID"] else None
+            )
 
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']
