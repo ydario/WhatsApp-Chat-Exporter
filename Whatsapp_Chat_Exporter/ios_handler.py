@@ -39,15 +39,8 @@ def contacts(db, data):
                 current_chat.name = content["ZFULLNAME"]
             if content["ZABOUTTEXT"]:
                 current_chat.status = content["ZABOUTTEXT"]
-            data.add_chat(zwhatsapp_id, current_chat)
-
-            # Also index by LID for group member lookups
-            zlid = content["ZLID"]
-            if zlid and content["ZFULLNAME"]:
-                if zlid not in data:
-                    lid_chat = ChatStore(Device.IOS)
-                    lid_chat.name = content["ZFULLNAME"]
-                    data.add_chat(zlid, lid_chat)
+            # Index by WhatsApp ID, with LID as alias if available
+            data.add_chat(zwhatsapp_id, current_chat, content["ZLID"] if content["ZLID"] else None)
 
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']

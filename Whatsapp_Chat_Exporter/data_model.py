@@ -67,6 +67,7 @@ class ChatCollection(MutableMapping):
         """Initialize an empty chat collection."""
         self._chats: Dict[str, ChatStore] = {}
         self._system: Dict[str, Any] = {}
+        self.set_system("master_lookup", {})
 
     def __getitem__(self, key: str) -> 'ChatStore':
         """Get a chat by its ID. Required for dict-like access."""
@@ -100,21 +101,32 @@ class ChatCollection(MutableMapping):
         Returns:
             Optional['ChatStore']: The chat if found, None otherwise
         """
-        return self._chats.get(chat_id)
+        if chat_id in self._chats:
+            return self._chats[chat_id]
+        elif chat_id in self.get_system("master_lookup"):
+            return self._chats[self.get_system("master_lookup")[chat_id]]
+        else:
+            return None
 
-    def add_chat(self, chat_id: str, chat: 'ChatStore') -> None:
+    def add_chat(self, chat_id: str, chat: 'ChatStore', alias: Optional[str] = None) -> 'ChatStore':
         """
         Add a new chat to the collection.
 
         Args:
             chat_id (str): The ID for the chat
             chat (ChatStore): The chat to add
+            alias (Optional[str]): An optional alias to associate with the chat ID
 
         Raises:
             TypeError: If chat is not a ChatStore object
         """
         if not isinstance(chat, ChatStore):
             raise TypeError("Chat must be a ChatStore object")
+        if chat_id in self._chats:
+            raise ValueError("Chat ID already exists. Use get_chat to retrieve existing chat.")
+        if alias:
+            self.get_system("master_lookup")[alias] = chat_id
+            chat.aliases.append(alias)
         self._chats[chat_id] = chat
         return self._chats[chat_id]
 
@@ -127,6 +139,34 @@ class ChatCollection(MutableMapping):
         """
         if chat_id in self._chats:
             del self._chats[chat_id]
+
+    def add_alias(self, alias: str, chat_id: str) -> bool:
+        """
+        Add or modify an alias for a chat.
+
+        Args:
+            alias (str): The alias to add
+            chat_id (str): The ID of the chat to associate the alias with
+        """       
+        if chat_id not in self._chats:
+            raise ValueError("Chat ID does not exist. Add chat first.")
+        self.get_system("master_lookup")[alias] = chat_id
+        return True
+
+    def remove_alias(self, alias: str) -> bool:
+        """
+        Remove an alias.
+
+        Args:
+            alias (str): The alias to remove
+        """
+        
+        if alias in self.get_system("master_lookup"):
+            self._chats[self.get_system("master_lookup")[alias]].aliases.remove(alias)
+            del self.get_system("master_lookup")[alias] 
+            return True
+        return False
+
 
     def items(self):
         """Get chat items (id, chat) pairs."""
@@ -208,6 +248,7 @@ class ChatStore:
         self.their_avatar_thumb = None
         self.status = None
         self.media_base = ""
+        self.aliases = []
 
     def __len__(self) -> int:
         """Get number of chats. Required for dict-like access."""
