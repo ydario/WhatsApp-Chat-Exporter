@@ -806,10 +806,9 @@ def _process_single_media(data, content, media_folder, mime, separate_media, fix
                     file_path, new_path, message.timestamp,
                     timezone_offset, embed_exif, rename_media
                 )
-                message.data = final_path
             else:
-                shutil.copy2(file_path, new_path)
-                message.data = new_path
+                final_path = new_path
+                shutil.copy2(file_path, final_path)
         elif embed_exif or rename_media:
             # Handle in-place processing when not separating
             # Create a copy with timestamp processing in the same folder
@@ -817,9 +816,9 @@ def _process_single_media(data, content, media_folder, mime, separate_media, fix
                 file_path, file_path, message.timestamp,
                 timezone_offset, embed_exif, rename_media
             )
-            message.data = final_path
         else:
-            message.data = file_path
+            final_path = file_path
+        message.data = final_path
     else:
         message.data = "The media is missing"
         message.mime = "media"

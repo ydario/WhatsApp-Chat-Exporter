@@ -495,20 +495,18 @@ def process_media_item(content, data, media_folder, mime, separate_media, fix_do
                     file_path, new_path, message.timestamp,
                     timezone_offset, embed_exif, rename_media
                 )
-                message.data = '/'.join(final_path.split("\\")[1:])
             else:
-                shutil.copy2(file_path, new_path)
-                message.data = '/'.join(new_path.split("\\")[1:])
+                final_path = new_path
+                shutil.copy2(file_path, final_path)
         elif embed_exif or rename_media:
             # Handle in-place processing when not separating
             final_path = process_media_with_timestamp(
                 file_path, file_path, message.timestamp,
                 timezone_offset, embed_exif, rename_media
             )
-            message.data = '/'.join(final_path.split("/")[1:])
         else:
-            message.data = '/'.join(file_path.split("/")[1:])
-
+            final_path = file_path
+        message.data = os.path.join(*final_path.split(os.sep)[1:])
     else:
         # Handle missing media
         message.data = "The media is missing"
