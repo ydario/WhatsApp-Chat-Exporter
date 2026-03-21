@@ -578,6 +578,12 @@ def process_messages(args, data: ChatCollection) -> None:
             filter_chat, args.filter_empty
         )
 
+        # Process polls
+        message_handler.polls(
+            db, data, args.filter_date,
+            filter_chat, args.filter_empty
+        )
+
         # Process calls
         process_calls(args, db, data, filter_chat, timing)
 
@@ -747,7 +753,7 @@ def setup_logging(level):
     
     if level == logging.DEBUG:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        log_handler_file = logging.FileHandler(f"wtsexpoter-debug-{timestamp}.log", mode="w")
+        log_handler_file = logging.FileHandler(f"wtsexporter-debug-{timestamp}.log", mode="w")
         log_handler_file.terminator = ""
         log_handler_file.addFilter(ClearLineFilter())
         handlers.append(log_handler_file)
