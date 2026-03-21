@@ -9,6 +9,7 @@ from Whatsapp_Chat_Exporter.data_model import ChatStore
 BASE_PATH = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared"
 chat_data_1 = {
     "12345678@s.whatsapp.net": {
+        'aliases': [],
         "name": "Friend",
         "type": "ios",
         "my_avatar": os.path.join(BASE_PATH, "Media", "Profile", "Photo.jpg"),
@@ -44,6 +45,7 @@ chat_data_1 = {
 
 chat_data_2 = {
     "12345678@s.whatsapp.net": {
+        'aliases': [],
         "name": "Friend",
         "type": "ios",
         "my_avatar": os.path.join(BASE_PATH, "Media", "Profile", "Photo.jpg"),
@@ -80,6 +82,7 @@ chat_data_2 = {
 # Expected merged data - should contain all messages with all fields initialized as they would be by Message class
 chat_data_merged = {
     "12345678@s.whatsapp.net": {
+        'aliases': [],
         "name": "Friend",
         "type": "ios",
         "my_avatar": os.path.join(BASE_PATH, "Media", "Profile", "Photo.jpg"),
