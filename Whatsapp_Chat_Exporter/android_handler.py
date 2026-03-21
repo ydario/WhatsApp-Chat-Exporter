@@ -579,7 +579,7 @@ def _get_reactions(db, data):
     logging.info(f"Processed {total_row_number} reactions in {convert_time_unit(total_time)}")
 
 
-def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separate_media=True, fix_dot_files=False
+def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separate_media=True, fix_dot_files=False,
           embed_exif=False, rename_media=False, timezone_offset=0):
     """
     Process WhatsApp media files from the database.
@@ -592,6 +592,7 @@ def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separa
         filter_chat: Chat filter conditions
         filter_empty: Filter for empty chats
         separate_media: Whether to separate media files by chat
+        fix_dot_files: Whether to fix media files with leading dot in the name
         embed_exif: Whether to embed EXIF timestamp in media files
         rename_media: Whether to rename media files with timestamp prefix
         timezone_offset: Hours offset from UTC for timestamp formatting
@@ -612,7 +613,7 @@ def media(db, data, media_folder, filter_date, filter_chat, filter_empty, separa
 
     with tqdm(total=total_row_number, desc="Processing media", unit="media", leave=False) as pbar:
         while (content := _fetch_row_safely(content_cursor)) is not None:
-            _process_single_media(data, content, media_folder, mime, separate_media, fix_dot_files
+            _process_single_media(data, content, media_folder, mime, separate_media, fix_dot_files,
                               embed_exif, rename_media, timezone_offset)
             pbar.update(1)
         total_time = pbar.format_dict['elapsed']

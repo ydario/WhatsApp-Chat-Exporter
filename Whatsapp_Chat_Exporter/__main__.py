@@ -591,7 +591,7 @@ def process_messages(args, data: ChatCollection) -> None:
         # Process media
         message_handler.media(
             db, data, args.media, args.filter_date,
-            filter_chat, args.filter_empty, args.separate_media, args.fix_dot_files
+            filter_chat, args.filter_empty, args.separate_media, args.fix_dot_files,
             args.embed_exif, args.rename_media, args.timezone_offset
         )
 
