@@ -30,7 +30,8 @@ class Timing:
         """
         if timestamp is not None:
             timestamp = timestamp / 1000 if timestamp > 9999999999 else timestamp
-            return datetime.fromtimestamp(timestamp, TimeZone(self.timezone_offset)).strftime(format)
+            tz = TimeZone(self.timezone_offset) if self.timezone_offset is not None else None
+            return datetime.fromtimestamp(timestamp, tz).strftime(format)
         return None
 
 
