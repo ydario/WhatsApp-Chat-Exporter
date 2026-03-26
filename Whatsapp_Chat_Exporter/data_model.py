@@ -8,12 +8,12 @@ class Timing:
     Handles timestamp formatting with timezone support.
     """
 
-    def __init__(self, timezone_offset: Optional[int]) -> None:
+    def __init__(self, timezone_offset: Optional[int] = None) -> None:
         """
         Initialize Timing object.
 
         Args:
-            timezone_offset (Optional[int]): Hours offset from UTC
+            timezone_offset (Optional[int]): Hours offset from UTC. Defaults to None (auto-detect).
         """
         self.timezone_offset = timezone_offset
 
