@@ -15,7 +15,7 @@ class Timing:
         Args:
             timezone_offset (Optional[Union[int, float]]): Hours offset from UTC. Defaults to None (auto-detect).
         """
-        self.timezone_offset = timezone_offset
+        self.tz = TimeZone(timezone_offset) if timezone_offset is not None else None
 
     def format_timestamp(self, timestamp: Optional[Union[int, float]], format: str) -> Optional[str]:
         """
@@ -30,8 +30,7 @@ class Timing:
         """
         if timestamp is not None:
             timestamp = timestamp / 1000 if timestamp > 9999999999 else timestamp
-            tz = TimeZone(self.timezone_offset) if self.timezone_offset is not None else None
-            return datetime.fromtimestamp(timestamp, tz).strftime(format)
+            return datetime.fromtimestamp(timestamp, self.tz).strftime(format)
         return None
 
 
