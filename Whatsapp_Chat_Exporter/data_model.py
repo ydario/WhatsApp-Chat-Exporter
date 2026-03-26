@@ -8,14 +8,14 @@ class Timing:
     Handles timestamp formatting with timezone support.
     """
 
-    def __init__(self, timezone_offset: Optional[int]) -> None:
+    def __init__(self, timezone_offset: Optional[Union[int, float]] = None) -> None:
         """
         Initialize Timing object.
 
         Args:
-            timezone_offset (Optional[int]): Hours offset from UTC
+            timezone_offset (Optional[Union[int, float]]): Hours offset from UTC. Defaults to None (auto-detect).
         """
-        self.timezone_offset = timezone_offset
+        self.tz = TimeZone(timezone_offset) if timezone_offset is not None else None
 
     def format_timestamp(self, timestamp: Optional[Union[int, float]], format: str) -> Optional[str]:
         """
@@ -30,7 +30,7 @@ class Timing:
         """
         if timestamp is not None:
             timestamp = timestamp / 1000 if timestamp > 9999999999 else timestamp
-            return datetime.fromtimestamp(timestamp, TimeZone(self.timezone_offset)).strftime(format)
+            return datetime.fromtimestamp(timestamp, self.tz).strftime(format)
         return None
 
 
@@ -39,12 +39,12 @@ class TimeZone(tzinfo):
     Custom timezone class with fixed offset.
     """
 
-    def __init__(self, offset: int) -> None:
+    def __init__(self, offset: Union[int, float]) -> None:
         """
         Initialize TimeZone object.
 
         Args:
-            offset (int): Hours offset from UTC
+            offset (Union[int, float]): Hours offset from UTC
         """
         self.offset = offset
 
