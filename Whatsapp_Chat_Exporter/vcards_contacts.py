@@ -66,13 +66,18 @@ def _parse_vcard_line(line: str) -> tuple[str, dict[str, str], str] | None:
     value = line[colon_index + 1:].strip()
 
     # Split property name from parameters
-    parts = prop_and_params.split(';')
-    property_name = parts[0].upper()
+    property_part, *params = prop_and_params.split(';')
+    
+    # We only care about property name for now, but the grouping mechanism may be
+    # useful in the future if we want to associate multiple properties together.
+    parts = property_part.split('.')
+    _, property_name = parts if len(parts) == 2 else (None, parts[0])
+    property_name = property_name.upper()
     
     parameters = {}
-    for part in parts[1:]:
-        if '=' in part:
-            key, val = part.split('=', 1)
+    for param in params:
+        if '=' in param:
+            key, val = param.split('=', 1)
             parameters[key.upper()] = val.strip('"') # Remove potential quotes from value
 
     return property_name, parameters, value
@@ -98,8 +103,9 @@ def get_vcard_value(entry: str, field_name: str) -> list[str]:
             values.append(decode_quoted_printable(cached_line + line, charset))
             cached_line = ""
         else:
-            # Skip empty lines or lines that don't start with the target field (after stripping)
-            if not line or not line.upper().startswith(target_name):
+            # Skip empty lines or lines that don't start with the target
+            # field (after stripping), considering potential grouping prefixes
+            if not line or (not line.upper().startswith(target_name) and f".{target_name}" not in line.upper().split(':')[0]):
                 continue
 
             parsed = _parse_vcard_line(line)

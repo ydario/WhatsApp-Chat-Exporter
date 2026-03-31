@@ -1,7 +1,7 @@
 # from contacts_names_from_vcards import readVCardsFile
 
 import os
-from Whatsapp_Chat_Exporter.vcards_contacts import normalize_number, read_vcards_file
+from Whatsapp_Chat_Exporter.vcards_contacts import normalize_number, read_vcards_file, get_vcard_value
 
 
 def test_readVCardsFile():
@@ -17,7 +17,7 @@ def test_readVCardsFile():
             # Print the count and the name
             print(f"{count}. {name}")
         print(data)
-    assert len(data) == 6
+    assert len(data) == 8
     # Test simple contact name
     assert data[0][1] == "Sample Contact"
     # Test complex name
@@ -30,6 +30,31 @@ def test_readVCardsFile():
     assert data[4][1] == "James Peacock Elementary"
     # Test business entry using ORG but not F/FN
     assert data[5][1] == "AAA Car Service"
+    # Test grouped entry
+    assert data[6][1] == "Racing Team (1)"
+    assert data[7][1] == "Racing Team (2)"
+
+
+def test_grouping_mechanism():
+    no_group_vcf = """
+BEGIN:VCARD
+VERSION:2.1
+TEL;CELL:7777777778
+TEL;CELL:7777777779
+TEL;CELL:7777777780
+ORG:Racing Team
+END:VCARD"""
+    group_vcf = """
+BEGIN:VCARD
+VERSION:2.1
+item1.TEL;CELL:7777777778
+item2.TEL;CELL:7777777779
+item3.TEL;CELL:7777777780
+ORG:Racing Team
+END:VCARD"""
+    assert get_vcard_value(no_group_vcf, "TEL") == ["7777777778", "7777777779", "7777777780"]
+    assert get_vcard_value(group_vcf, "TEL") == ["7777777778", "7777777779", "7777777780"]
+    
 
 
 def test_create_number_to_name_dicts():
