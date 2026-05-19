@@ -101,33 +101,40 @@ class BackupExtractor:
             decrypt_chunk_size=self.decrypt_chunk_size,
         )
         logging.info(f"iOS backup is opened successfully")
-        logging.info("Decrypting WhatsApp database...", extra={"clear": True})
+        logging.info("Decrypting WhatsApp database...")
         try:
-            self.backup.extract_file(
-                relative_path=RelativePath.WHATSAPP_MESSAGES,
-                domain_like=self.identifiers.DOMAIN,
-                output_filename=self.identifiers.MESSAGE,
-            )
-            self.backup.extract_file(
-                relative_path=RelativePath.WHATSAPP_CONTACTS,
-                domain_like=self.identifiers.DOMAIN,
-                output_filename=self.identifiers.CONTACT,
-            )
-            self.backup.extract_file(
-                relative_path=RelativePath.WHATSAPP_CALLS,
-                domain_like=self.identifiers.DOMAIN,
-                output_filename=self.identifiers.CALL,
-            )
+            try:
+                self.backup.extract_file(
+                    relative_path=RelativePath.WHATSAPP_MESSAGES,
+                    domain_like=self.identifiers.DOMAIN,
+                    output_filename=self.identifiers.MESSAGE,
+                )
+            except FileNotFoundError:
+                logging.error(
+                    "Essential WhatsApp files are missing from the iOS backup. "
+                    "Perhapse you enabled end-to-end encryption for the backup? "
+                    "See https://wts.knugi.dev/docs.html?dest=iose2e"
+                )
+                exit(6)
+            try:
+                self.backup.extract_file(
+                    relative_path=RelativePath.WHATSAPP_CONTACTS,
+                    domain_like=self.identifiers.DOMAIN,
+                    output_filename=self.identifiers.CONTACT,
+                )
+            except FileNotFoundError:
+                logging.warning(f"Contact database not found. Skipping...")
+            try:
+                self.backup.extract_file(
+                    relative_path=RelativePath.WHATSAPP_CALLS,
+                    domain_like=self.identifiers.DOMAIN,
+                    output_filename=self.identifiers.CALL,
+                )
+            except FileNotFoundError:
+                logging.warning(f"Call database not found. Skipping...")
         except ValueError:
             logging.error("Failed to decrypt backup: incorrect password?")
             exit(7)
-        except FileNotFoundError:
-            logging.error(
-                "Essential WhatsApp files are missing from the iOS backup. "
-                "Perhapse you enabled end-to-end encryption for the backup? "
-                "See https://wts.knugi.dev/docs.html?dest=iose2e"
-            )
-            exit(6)
         else:
             logging.info(f"WhatsApp database decrypted successfully")
 
