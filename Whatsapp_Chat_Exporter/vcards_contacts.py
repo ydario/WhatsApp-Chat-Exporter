@@ -68,6 +68,8 @@ def _parse_vcard_line(line: str) -> tuple[str, dict[str, str], str] | None:
     # Split property name from parameters
     parts = prop_and_params.split(';')
     property_name = parts[0].upper()
+    if '.' in property_name:
+        property_name = property_name.split('.', 1)[1]
     
     parameters = {}
     for part in parts[1:]:
@@ -99,7 +101,10 @@ def get_vcard_value(entry: str, field_name: str) -> list[str]:
             cached_line = ""
         else:
             # Skip empty lines or lines that don't start with the target field (after stripping)
-            if not line or not line.upper().startswith(target_name):
+            if not line:
+                continue
+            upper_line = line.upper()
+            if not (upper_line.startswith(target_name) or ('.' in upper_line and upper_line.split('.', 1)[1].startswith(target_name))):
                 continue
 
             parsed = _parse_vcard_line(line)
