@@ -51,7 +51,13 @@ def contacts(db, data, enrich_from_vcards):
     
     with tqdm(total=total_row_number, desc="Processing contacts", unit="contact", leave=False) as pbar:
         while (row := _fetch_row_safely(c)) is not None:
-            current_chat = data.add_chat(row["jid"], ChatStore(Device.ANDROID, row["display_name"]))
+            jid = row["jid"]
+            if jid in data:
+                current_chat = data.get_chat(jid)
+                if row["display_name"] is not None:
+                    current_chat.name = row["display_name"]
+            else:
+                current_chat = data.add_chat(jid, ChatStore(Device.ANDROID, row["display_name"]))
             if row["status"] is not None:
                 current_chat.status = row["status"]
             pbar.update(1)
@@ -1022,24 +1028,17 @@ def _get_calls_count_modern(c, filter_chat):
     include_filter = get_chat_condition(filter_chat[0], True, ["key_remote_jid"])
     exclude_filter = get_chat_condition(filter_chat[1], False, ["key_remote_jid"])
 
-    if jid_map_exists:
-        jid_selection = "COALESCE(lid_global.raw_string, jid.raw_string)"
-        jid_joins = """LEFT JOIN jid_map as jid_map_global
-                    ON chat.jid_row_id = jid_map_global.lid_row_id
-                LEFT JOIN jid lid_global
-                    ON jid_map_global.jid_row_id = lid_global._id"""
-    else:
-        jid_selection = "jid.raw_string"
-        jid_joins = ""
-
     query = f"""SELECT count(),
-                {jid_selection} as key_remote_jid
+                COALESCE(lid_global.raw_string, jid.raw_string) as key_remote_jid
             FROM call_log
                 INNER JOIN jid
                     ON call_log.jid_row_id = jid._id
                 LEFT JOIN chat
                     ON call_log.jid_row_id = chat.jid_row_id
-                {jid_joins}
+                LEFT JOIN jid_map as jid_map_global
+                    ON chat.jid_row_id = jid_map_global.lid_row_id
+                LEFT JOIN jid lid_global
+                    ON jid_map_global.jid_row_id = lid_global._id
             WHERE 1=1
                 {include_filter}
                 {exclude_filter}"""
@@ -1083,18 +1082,8 @@ def _fetch_calls_data_modern(c, filter_chat):
     include_filter = get_chat_condition(filter_chat[0], True, ["key_remote_jid"])
     exclude_filter = get_chat_condition(filter_chat[1], False, ["key_remote_jid"])
 
-    if jid_map_exists:
-        jid_selection = "COALESCE(lid_global.raw_string, jid.raw_string)"
-        jid_joins = """LEFT JOIN jid_map as jid_map_global
-                    ON chat.jid_row_id = jid_map_global.lid_row_id
-                LEFT JOIN jid lid_global
-                    ON jid_map_global.jid_row_id = lid_global._id"""
-    else:
-        jid_selection = "jid.raw_string"
-        jid_joins = ""
-
     query = f"""SELECT call_log._id,
-                    {jid_selection} as key_remote_jid,
+                    COALESCE(lid_global.raw_string, jid.raw_string) as key_remote_jid,
                     from_me,
                     call_id,
                     timestamp,
@@ -1108,7 +1097,10 @@ def _fetch_calls_data_modern(c, filter_chat):
                     ON call_log.jid_row_id = jid._id
                 LEFT JOIN chat
                     ON call_log.jid_row_id = chat.jid_row_id
-                {jid_joins}
+                LEFT JOIN jid_map as jid_map_global
+                    ON chat.jid_row_id = jid_map_global.lid_row_id
+                LEFT JOIN jid lid_global
+                    ON jid_map_global.jid_row_id = lid_global._id
             WHERE 1=1
                 {include_filter}
                 {exclude_filter}"""
