@@ -919,27 +919,29 @@ def _process_vcard_row(row, path, data):
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(row["vcard"])
 
-    message = data.get_chat(row["key_remote_jid"]).get_message(row["message_row_id"])
-    message.data = "This media include the following vCard file(s):<br>" \
-        f'<a href="{htmle(file_path)}">{htmle(media_name)}</a>'
-    message.mime = "text/x-vcard"
-    message.meta = True
-    message.safe = True
-
+    chat = data.get_chat(row["key_remote_jid"])
+    if chat is not None:
+        message = data.get_chat(row["key_remote_jid"]).get_message(row["message_row_id"])
+        message.data = "This media include the following vCard file(s):<br>" \
+            f'<a href="{htmle(file_path)}">{htmle(media_name)}</a>'
+        message.mime = "text/x-vcard"
+        message.meta = True
+        message.safe = True
 
 def calls(db, data, timezone_offset, filter_chat):
     """Process call logs from WhatsApp database."""
     c = db.cursor()
+    jid_map_exists = data.get_system("jid_map_exists")
 
     # Check if there are any calls that match the filter
-    total_row_number = _get_calls_count(c, filter_chat)
+    total_row_number = _get_calls_count(c, filter_chat, jid_map_exists)
     if total_row_number == 0:
         return
 
     logging.info(f"Processing calls...({total_row_number})", extra={"clear": True})
 
     # Fetch call data
-    calls_data = _fetch_calls_data(c, filter_chat)
+    calls_data = _fetch_calls_data(c, filter_chat, jid_map_exists)
 
     # Create a chat store for all calls
     chat = ChatStore(Device.ANDROID, "WhatsApp Calls")
@@ -955,24 +957,31 @@ def calls(db, data, timezone_offset, filter_chat):
     data.add_chat("000000000000000", chat)
     logging.info(f"Processed {total_row_number} calls in {convert_time_unit(total_time)}")
 
-def _get_calls_count(c, filter_chat):
+def _get_calls_count(c, filter_chat, jid_map_exists):
     """Get the count of call records that match the filter."""
 
     # Build the filter conditions
     include_filter = get_chat_condition(filter_chat[0], True, ["key_remote_jid"])
     exclude_filter = get_chat_condition(filter_chat[1], False, ["key_remote_jid"])
 
+    if jid_map_exists:
+        jid_selection = "COALESCE(lid_global.raw_string, jid.raw_string)"
+        jid_joins = """LEFT JOIN jid_map as jid_map_global
+                    ON chat.jid_row_id = jid_map_global.lid_row_id
+                LEFT JOIN jid lid_global
+                    ON jid_map_global.jid_row_id = lid_global._id"""
+    else:
+        jid_selection = "jid.raw_string"
+        jid_joins = ""
+
     query = f"""SELECT count(),
-                COALESCE(lid_global.raw_string, jid.raw_string) as key_remote_jid
+                {jid_selection} as key_remote_jid
             FROM call_log
                 INNER JOIN jid
                     ON call_log.jid_row_id = jid._id
                 LEFT JOIN chat
                     ON call_log.jid_row_id = chat.jid_row_id
-                LEFT JOIN jid_map as jid_map_global
-                    ON chat.jid_row_id = jid_map_global.lid_row_id
-                LEFT JOIN jid lid_global
-                    ON jid_map_global.jid_row_id = lid_global._id
+                {jid_joins}
             WHERE 1=1
                 {include_filter}
                 {exclude_filter}"""
@@ -980,15 +989,25 @@ def _get_calls_count(c, filter_chat):
     return c.fetchone()[0]
 
 
-def _fetch_calls_data(c, filter_chat):
+def _fetch_calls_data(c, filter_chat, jid_map_exists):
     """Fetch call data from the database."""
 
     # Build the filter conditions
     include_filter = get_chat_condition(filter_chat[0], True, ["key_remote_jid"])
     exclude_filter = get_chat_condition(filter_chat[1], False, ["key_remote_jid"])
 
+    if jid_map_exists:
+        jid_selection = "COALESCE(lid_global.raw_string, jid.raw_string)"
+        jid_joins = """LEFT JOIN jid_map as jid_map_global
+                    ON chat.jid_row_id = jid_map_global.lid_row_id
+                LEFT JOIN jid lid_global
+                    ON jid_map_global.jid_row_id = lid_global._id"""
+    else:
+        jid_selection = "jid.raw_string"
+        jid_joins = ""
+
     query = f"""SELECT call_log._id,
-                    COALESCE(lid_global.raw_string, jid.raw_string) as key_remote_jid,
+                    {jid_selection} as key_remote_jid,
                     from_me,
                     call_id,
                     timestamp,
@@ -1002,10 +1021,7 @@ def _fetch_calls_data(c, filter_chat):
                     ON call_log.jid_row_id = jid._id
                 LEFT JOIN chat
                     ON call_log.jid_row_id = chat.jid_row_id
-                LEFT JOIN jid_map as jid_map_global
-                    ON chat.jid_row_id = jid_map_global.lid_row_id
-                LEFT JOIN jid lid_global
-                    ON jid_map_global.jid_row_id = lid_global._id
+                {jid_joins}
             WHERE 1=1
                 {include_filter}
                 {exclude_filter}"""
